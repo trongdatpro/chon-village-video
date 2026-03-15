@@ -272,13 +272,13 @@
         <div id="contact-icons-slide"
             class="group flex flex-col-reverse items-center gap-3 opacity-0 translate-y-10 pointer-events-none transition-all duration-500 ease-out">
             <!-- Phone Button -->
-            <a href="tel:0369877478"
+            <a href="tel:0889717713"
                 class="relative flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-all duration-500 delay-[0ms] scale-0 rotate-[360deg] group-[.opacity-100]:scale-100 group-[.opacity-100]:rotate-0 hover:scale-110 active:scale-95">
                 <span class="material-symbols-outlined text-primary text-xl">call</span>
             </a>
 
             <!-- Fanpage Button -->
-            <a href="https://facebook.com/chon.village" target="_blank"
+            <a href="https://www.facebook.com/profile.php?id=61575491687268" target="_blank"
                 class="relative flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-all duration-500 delay-[100ms] scale-0 rotate-[360deg] group-[.opacity-100]:scale-100 group-[.opacity-100]:rotate-0 hover:scale-110 active:scale-95">
                 <svg class="h-5 w-5 fill-[#1877F2]" viewBox="0 0 24 24">
                     <path
@@ -287,7 +287,7 @@
             </a>
 
             <!-- Zalo Button -->
-            <a href="https://zalo.me/0369877478" target="_blank"
+            <a href="https://zalo.me/0889717713" target="_blank"
                 class="relative flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-all duration-500 delay-[200ms] scale-0 rotate-[360deg] group-[.opacity-100]:scale-100 group-[.opacity-100]:rotate-0 hover:scale-110 active:scale-95">
                 <img class="h-6 w-6 object-contain"
                     src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png"
@@ -554,46 +554,55 @@
                             return;
                         }
 
+                        // --- 1-NIGHT POLICY SYNC (v11.14) ---
                         if (diffDays === 1) {
-                            if (isCheckingPolicy) return;
-                            isCheckingPolicy = true;
+                            const nowAtLat = new Date();
+                            const currentMonthId = nowAtLat.getMonth() + 1;
+                            const currentYear = nowAtLat.getFullYear();
+                            const checkinMonth = checkinDateObj.getMonth() + 1;
+                            const checkinYear = checkinDateObj.getFullYear();
+                            
+                            const isCurrentMonth = (checkinMonth === currentMonthId) && (checkinYear === currentYear);
+                            
+                            // 1. Current Month: Always allow redirection (rooms.html handles gaps)
+                            if (isCurrentMonth) {
+                                console.log("[v11.16] Current Month Stay - Proceeding to rooms.html");
+                                // Proceed immediately
+                            } 
+                            // 2. Other Months: Check Policy API
+                            else {
+                                if (isCheckingPolicy) return;
+                                isCheckingPolicy = true;
 
-                            try {
-                                const policyDataRaw = await fetchJSONP(POLICY_API + "&t=" + Date.now());
-                                let dynamicPolicy = [];
-                                if (policyDataRaw && policyDataRaw.table && policyDataRaw.table.rows) {
-                                    dynamicPolicy = policyDataRaw.table.rows.map(row => ({
-                                        Month_ID: row.c[0] ? row.c[0].v : null,
-                                        Min_Days_Lead: row.c[1] ? row.c[1].v : null
-                                    })).filter(p => p.Month_ID !== null);
-                                }
+                                try {
+                                    const policyDataRaw = await fetchJSONP(POLICY_API + "&t=" + Date.now());
+                                    let dynamicPolicy = [];
+                                    if (policyDataRaw && policyDataRaw.table && policyDataRaw.table.rows) {
+                                        dynamicPolicy = policyDataRaw.table.rows.map(row => ({
+                                            Month_ID: row.c[0] ? row.c[0].v : null,
+                                            Min_Days_Lead: row.c[1] ? row.c[1].v : null
+                                        })).filter(p => p.Month_ID !== null);
+                                    }
 
-                                const STATIC_POLICY = {
-                                    1: 5, 2: 5, 3: 4, 4: 7, 5: 7, 6: 5, 7: 5, 8: 5, 9: 7, 10: 7, 11: 7, 12: 5
-                                };
+                                    const STATIC_POLICY = { 1: 5, 2: 5, 3: 4, 4: 7, 5: 7, 6: 5, 7: 5, 8: 5, 9: 7, 10: 7, 11: 7, 12: 5 };
+                                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                                    const daysLead = Math.ceil((checkinDateObj - today) / (1000 * 60 * 60 * 24));
+                                    let minDaysLead = (dynamicPolicy.find(p => p.Month_ID === checkinMonth))?.Min_Days_Lead || STATIC_POLICY[checkinMonth] || 7;
 
-                                const today = new Date();
-                                today.setHours(0, 0, 0, 0);
-                                const daysLead = Math.ceil((checkinDateObj - today) / (1000 * 60 * 60 * 24));
-                                const monthId = checkinDateObj.getMonth() + 1;
-                                let minDaysLead = (dynamicPolicy.find(p => p.Month_ID === monthId))?.Min_Days_Lead || STATIC_POLICY[monthId] || 7;
-
-                                const isWithinPeriod = daysLead <= minDaysLead;
-                                if (!isWithinPeriod) {
-                                    // If OUTSIDE period, we block 1-night stays on the Landing Page (since we can't check gaps across all rooms easily here)
+                                    if (daysLead > minDaysLead) {
+                                        triggerWarningEffect();
+                                        isCheckingPolicy = false;
+                                        return;
+                                    }
+                                } catch (err) {
+                                    console.error("Policy check error", err);
+                                    // On error for non-current month, safer to show warning
                                     triggerWarningEffect();
                                     isCheckingPolicy = false;
                                     return;
+                                } finally {
+                                    isCheckingPolicy = false;
                                 }
-                                // If WITHIN period, we allow the user to proceed to rooms.html
-                            } catch (err) {
-                                console.error("Policy check unexpected error", err);
-                                isCheckingPolicy = false;
-                                // Fallback: allow navigation on unexpected error after warning
-                                triggerWarningEffect();
-                                return;
-                            } finally {
-                                isCheckingPolicy = false;
                             }
                         }
 

@@ -21,35 +21,45 @@ const renderCurrency = (val) => {
     return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 };
 
+const isBooked = (s) => {
+    if (!s) return false;
+    // Normalize both Unicode and whitespace
+    const clean = String(s).normalize('NFC').trim().toLowerCase();
+    // Common indicators for a booked/unavailable room
+    return clean === 'booked' || clean === 'đã đặt' || clean === 'b' || clean.includes('đã đặt') || clean.includes('đặt');
+};
+
 const convertGDriveUrl = (url, isVideo = false, highRes = false, customSize = null) => {
     if (!url) return "";
     let fileId = "";
 
     // --- YouTube Support ---
-    // Updated regex to support youtube-nocookie.com and various path formats
-    const ytRegex = /(?:youtube(?:-nocookie)?\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
-    const ytMatch = url.match(ytRegex);
-
+    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
     if (ytMatch && ytMatch[1]) {
-        const videoId = ytMatch[1];
+        const ytId = ytMatch[1];
         if (isVideo) {
-            // Reverting to standard youtube.com as nocookie might have different header requirements
-            const ytUrl = `https://www.youtube.com/embed/${videoId}?rel=0`;
-            console.log(`[YouTube Debug] Raw: ${url} -> Embed: ${ytUrl}`);
-            return ytUrl;
+            return `https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0`;
         }
-        // If not video (thumbnail request) - using hqdefault for 100% reliability
-        const thumbUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-        console.log(`[YouTube Debug] Raw: ${url} -> Thumb: ${thumbUrl}`);
-        return thumbUrl;
+        // YouTube thumbnail
+        return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
     }
 
     // --- Cloudinary Support ---
     if (url.includes('cloudinary.com')) {
         if (isVideo) return url;
-        // Cloudinary thumbnail: replace extension with .jpg or add 'so_auto' transformation
-        // Basic approach: replace extension if it's a direct file link
-        return url.replace(/\.(mp4|webm|mov|m4v|ogv)$/, '.jpg');
+
+        let trans = customSize || (highRes ? "w_1600" : "w_800");
+        // Normalize size param (e.g., w1600 -> w_1600)
+        if (typeof trans === 'string' && trans.startsWith('w') && !trans.includes('_')) {
+            trans = 'w_' + trans.substring(1);
+        }
+
+        const finalTrans = `f_jpg,so_2,q_auto,${trans}`;
+
+        // Inject transformations right after /upload/
+        // We do NOT capture the version string here to avoid breaking the URL
+        return url.replace(/\/upload\//, `/upload/${finalTrans}/`)
+            .replace(/\.(mp4|webm|mov|m4v|ogv)(\?.*)?$/i, '.jpg$2');
     }
 
     // --- Google Drive Support ---
@@ -63,9 +73,9 @@ const convertGDriveUrl = (url, isVideo = false, highRes = false, customSize = nu
 
     if (fileId) {
         if (isVideo) {
-            // Attempt to force quality for various players
+            // Attempt to force quality and autoplay for GDrive preview
             const baseUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-            return baseUrl + "?vq=hd720";
+            return baseUrl + "?vq=hd720&autoplay=1";
         }
         // customSize > highRes > default
         let sizeParam = customSize || (highRes ? "w1600" : "w2048");
@@ -334,11 +344,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (typeof val === 'string' && val.startsWith('Date(')) {
                     const parts = val.substring(5, val.length - 1).split(',');
                     dateStr = `${parts[0]}-${String(parseInt(parts[1]) + 1).padStart(2, '0')}-${String(parseInt(parts[2])).padStart(2, '0')}`;
-                } else { dateStr = String(formatted || val).trim(); }
+                } else {
+                    // Robust normalization: truncate time and handle DD/MM/YYYY
+                    let s = String(formatted || val).trim().split(' ')[0]; // Truncate time "00:00:00"
+                    if (s.includes('/')) {
+                        const parts = s.split('/');
+                        if (parts[2] && parts[2].length === 4) { // DD/MM/YYYY
+                            dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        } else if (parts[0] && parts[0].length === 4) { // YYYY/MM/DD
+                            dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                        }
+                    } else if (s.includes('-')) {
+                        const parts = s.split('-');
+                        if (parts[0] && parts[0].length === 4) { // YYYY-MM-DD
+                            dateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                        }
+                    } else {
+                        dateStr = s;
+                    }
+                }
 
-                const cleanRid = String(rId).trim();
+                const cleanRid = String(rId).trim().replace(/ /g, '_');
                 if (!scheduleData[cleanRid]) scheduleData[cleanRid] = {};
                 scheduleData[cleanRid][dateStr] = String(status).trim();
+                console.log(`[Parser Sync] Room: ${cleanRid}, Date: ${dateStr}, Status: ${status}`);
             });
 
             if (monthKey && pricingResponses[index] && pricingResponses[index].table) {
@@ -347,7 +376,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!row.c || row.c.length < 6) return;
                     const rId = row.c[0] ? row.c[0].v : null;
                     if (!rId) return;
-                    const cleanRid = String(rId).trim();
+                    const cleanRid = String(rId).trim().replace(/ /g, '_');
 
                     const getPrice = (cell) => {
                         if (!cell) return 0;
@@ -392,25 +421,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             curr.setDate(curr.getDate() + 1);
         }
 
+        const isOneNightStay = datesToStay.length === 1;
+        const nowAtLat = new Date();
+        const currentMonthId = nowAtLat.getMonth() + 1;
+        const currentYear = nowAtLat.getFullYear();
+        const isCurrentMonth = (checkinDate.getMonth() + 1 === currentMonthId) && (checkinDate.getFullYear() === currentYear);
+
         let allowedRooms = localRooms;
-        if (adults >= 3) {
-            // Case 1: 3+ Adults (+ optional Children) -> All Rooms
+        if (isOneNightStay && isCurrentMonth) {
+            // RELAXED: For 1-night stays in current month, check ALL rooms for Gap-Filler status
             allowedRooms = localRooms;
-        } else if (adults === 2 && children === 1) {
-            // Case 2: 2 Adults + 1 Child
-            if (isUnder6) {
-                // Case 2a: Under 6 -> Green Room Only
-                allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
-            } else {
-                // Case 2b: 6+ -> All Rooms
+        } else {
+            if (adults >= 3) {
                 allowedRooms = localRooms;
+            } else if (adults === 2 && children === 1) {
+                if (isUnder6) {
+                    allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
+                } else {
+                    allowedRooms = localRooms;
+                }
+            } else if (adults === 2 && children >= 2) {
+                allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
+            } else if (children > 0 && isUnder6) {
+                allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
             }
-        } else if (adults === 2 && children >= 2) {
-            // Case 3: 2 Adults + 2+ Children -> Green Room only
-            allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
-        } else if (children > 0 && isUnder6) {
-            // Other Children Groups (e.g. 1 adult + children under 6) -> Green Room Only
-            allowedRooms = localRooms.filter(r => r.id === 'Green_Room');
         }
 
         roomsContainer.innerHTML = '';
@@ -471,45 +505,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         roomsList.forEach(room => {
-            // Assess Availability and Calculate Price
+            // Assessment and Multi-night Price Calculation
             let isAvailable = true;
-            let firstNightWeekday = 0;
-            let firstNightWeekend = 0;
-            let finalPriceToPass = 0;
+            let totalRoomBasePrice = 0;
             let roomImg = room.img;
 
-            // 1. Check if room is available for ALL days
+            // 1. Check if room is available for ALL days and sum the price
+            let bookedOnTargetNight = false;
             for (const date of datesToStay) {
                 const dateStr = getStr(date);
-                if (scheduleData[room.id] && scheduleData[room.id][dateStr] === 'Booked') {
-                    isAvailable = false;
+                const status = scheduleData[room.id] ? scheduleData[room.id][dateStr] : null;
+                if (isBooked(status)) {
+                    bookedOnTargetNight = true;
+                    uiLog(`Room ${room.id}: Hidden (Actually Booked on ${dateStr}: ${status})`);
                     break;
                 }
+
+                // Sum night price (Weekday vs Weekend)
+                const monthKey = dateStr.substring(0, 7);
+                const currentMonthPricing = pricingData[monthKey] || pricingData['default'] || {};
+                const roomSheetData = currentMonthPricing[room.id] || {};
+
+                const dow = date.getDay();
+                const isWe = (dow === 5 || dow === 6 || dow === 0);
+                const nightPrice = isWe ? (roomSheetData.weekend || 1000000) : (roomSheetData.weekday || 800000);
+                totalRoomBasePrice += nightPrice;
             }
 
-            // 2. Fetch Dynamic Pricing & Capacity
+            if (bookedOnTargetNight) return; // HIDDEN if actually booked
+
+            // 2. Fetch Dynamic Pricing (for display/capacity)
             const firstDate = datesToStay[0];
             const firstDateStr = getStr(firstDate);
-            const monthKey = firstDateStr.substring(0, 7);
-            const currentMonthPricing = pricingData[monthKey] || pricingData['default'] || {};
-            const roomSheetData = currentMonthPricing[room.id] || {};
+            const mKey = firstDateStr.substring(0, 7);
+            const pricing = pricingData[mKey] || pricingData['default'] || {};
+            const roomSheetData = pricing[room.id] || {};
 
-            // Dynamic Values with Fallbacks
             const maxAdults = roomSheetData.maxAdults !== undefined ? roomSheetData.maxAdults : 2;
             const maxChildren = roomSheetData.maxChildren !== undefined ? roomSheetData.maxChildren : 2;
             const kidsUnder6Allowed = roomSheetData.kidsUnder6 || "Yes";
 
-            firstNightWeekday = roomSheetData.weekday || 800000;
-            firstNightWeekend = roomSheetData.weekend || 1000000;
-
             // Priority: 1. Gallery Sheet (Order 1) -> 2. Pricing Sheet -> 3. Local definition
             if (galleryData[room.id] && galleryData[room.id].length > 0) {
-                roomImg = galleryData[room.id][0].url;
+                roomImg = convertGDriveUrl(galleryData[room.id][0].url, false);
             } else if (roomSheetData.img) {
-                roomImg = convertGDriveUrl(roomSheetData.img);
+                roomImg = convertGDriveUrl(roomSheetData.img, false);
             }
 
-            // --- LEAD TIME & PERIOD LOGIC ---
+            // --- LEAD TIME & PERIOD LOGIC (Simplified) ---
             const checkin = datesToStay[0];
             const today = new Date(); today.setHours(0, 0, 0, 0);
             const daysLead = Math.ceil((checkin - today) / (1000 * 60 * 60 * 24));
@@ -521,49 +564,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isWithinPeriod = daysLead <= minDaysLead;
 
             // --- FILTERING LOGIC ---
-            if (isWithinPeriod) {
-                // WITHIN PERIOD: Ignore capacity/age for children. Only check existence of room in schedule.
-                // Standard capacity (adults) is handled at the aggregate level below.
+            const isOneNightStay = datesToStay.length === 1;
+            const nowAtLat = new Date();
+            const currentMonthId = nowAtLat.getMonth() + 1;
+            const currentYear = nowAtLat.getFullYear();
+            const isCurrentMonth = (checkin.getMonth() + 1 === currentMonthId) && (checkin.getFullYear() === currentYear);
+
+            if (isOneNightStay) {
+                isAvailable = true;
+            } else if (isWithinPeriod) {
+                // OK
             } else {
-                // OUTSIDE PERIOD: Enforce all standard policies.
-
-                // A. Standard Guest Capacity Filter
-                // RELAXED: Don't hide rooms if adults > maxAdults, we check total capacity at confirmation
-                // if (adults > maxAdults) isAvailable = false;
-
-                // B. Standard Children Under 6 Policy Filter
                 if (children > 0) {
-                    if (isUnder6 && kidsUnder6Allowed.toLowerCase() === "no") {
-                        isAvailable = false;
-                    }
+                    if (isUnder6 && kidsUnder6Allowed.toLowerCase() === "no") isAvailable = false;
                     if (children > maxChildren) isAvailable = false;
-                }
-
-                // C. Standard Gap-Filler Policy for 1st night
-                if (isAvailable && datesToStay.length === 1) {
-                    const prevDate = new Date(checkin); prevDate.setDate(prevDate.getDate() - 1);
-                    const nextDate = new Date(checkin); nextDate.setDate(nextDate.getDate() + 1);
-                    const prevStr = getStr(prevDate);
-                    const nextStr = getStr(nextDate);
-
-                    let isGap = false;
-                    if (scheduleData[room.id] && scheduleData[room.id][prevStr] === 'Booked' && scheduleData[room.id][nextStr] === 'Booked') {
-                        isGap = true;
-                    }
-
-                    if (!isGap) {
-                        isAvailable = false;
-                    }
                 }
             }
 
-            // RECOVERY REQUIREMENT: Hide room if not available (Schedule check)
             if (!isAvailable) return;
-
-            // Final Price Selection
-            const dayOfWeek = firstDate.getDay();
-            const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0);
-            finalPriceToPass = isWeekend ? firstNightWeekend : firstNightWeekday;
 
             // Build Room Card HTML
             const specialAttrHtml = room.special ? `
@@ -584,12 +602,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const isAlreadySelected = selectedRooms.some(r => r.id === room.id);
             const surchargeMessages = {
-                'Pink_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 450/người/đêm không extra bed',
-                'Gray_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 450/người/đêm không extra bed',
-                'Green_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 450/người/đêm không extra bed',
-                'White_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 550/người/đêm không extra bed',
-                'Black_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 550/người/đêm có extra bed',
-                'Gold_Room': 'Phòng đơn 2 khách - Phụ thu khách thứ 3 từ 15 tuổi 650/người/đêm không extra bed'
+                'Pink_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 450.000đ/đêm',
+                'Gray_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 450.000đ/đêm',
+                'Green_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 450.000đ/đêm',
+                'White_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 600.000đ/đêm',
+                'Black_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 550.000đ/đêm',
+                'Gold_Room': 'Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: 650.000đ/đêm'
             };
             const surchargeText = surchargeMessages[room.id] || "";
 
@@ -597,12 +615,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex flex-col gap-0.5 -ml-3">
                         <p class="text-[11px] text-slate-400 uppercase tracking-tight mb-1">Giá Niêm Yết</p>
                         <div class="flex items-baseline gap-1 whitespace-nowrap">
-                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(firstNightWeekday)}</span>
-                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Trong Tuần (Thứ 2 - Thứ 5)</span>
+                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(roomSheetData.weekday || 800000)}</span>
+                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Trong Tuần</span>
                         </div>
                         <div class="flex items-baseline gap-1 whitespace-nowrap">
-                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(firstNightWeekend)}</span>
-                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Cuối Tuần (Thứ 6 - Chủ Nhật)</span>
+                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(roomSheetData.weekend || 1000000)}</span>
+                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Cuối Tuần</span>
                         </div>
                         <p class="text-[12px] sm:text-[13px] text-black font-bold mt-1.5">${surchargeText}</p>
                     </div>`;
@@ -610,7 +628,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const buttonHtml = `
                     <div class="relative p-[3px] rounded-xl bg-gradient-to-b from-[#BF953F] via-[#FCF6BA] to-[#AA771C] shadow-lg shadow-black/20 group/btn active:scale-95 transition-transform duration-300">
                         <div class="p-[1px] rounded-[9px] bg-gradient-to-b from-[#AA771C] via-[#FCF6BA] to-[#BF953F]">
-                            <button data-room-id="${room.id}" onclick='selectRoom(this, ${JSON.stringify({ id: room.id, name: room.name, img: roomImg, totalPrice: finalPriceToPass })})' 
+                            <button data-room-id="${room.id}" onclick='selectRoom(this, ${JSON.stringify({ id: room.id, name: room.name, img: roomImg, baseRoomTotal: totalRoomBasePrice, nights: datesToStay.length })})' 
                                 class="${isAlreadySelected ? 'bg-[#A0824B] text-white pointer-events-none' : 'bg-primary text-white'} hover:bg-[#A0824B] font-sans tracking-wider font-bold text-[15px] sm:text-[16px] py-2.5 px-8 rounded-[8px] transition-all duration-500 flex items-center justify-center leading-none uppercase w-full whitespace-nowrap">
                                 ${isAlreadySelected ? 'Đã Chọn' : 'Chọn Phòng'}
                             </button>
@@ -631,7 +649,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                      onclick='openGallery("${room.id}")'>
                     <img id="img-${room.id}" alt="${room.name}" 
                          class="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-110" 
-                         src="${roomImg}"/>
+                         src="${roomImg}"
+                         onerror="this.style.opacity='0'"/>
                     
                     <!-- Subtle Media Count Badge (Bottom Corner) -->
                     ${window.galleryData[room.id] ? `
@@ -715,7 +734,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <p class="text-center text-[#c8a96a] font-display italic text-xl px-4">
                         Hiện tại chỉ còn ${availableRoomsCount} phòng đơn đủ cho ${availableRoomsCount * 2} khách. <br class="hidden sm:block"> Xin vui lòng liên hệ Zalo để được hỗ trợ chi tiết.
                     </p>
-                    <a href="https://zalo.me/0369877478" target="_blank" class="mt-4 bg-primary text-white py-2 px-6 rounded-lg font-bold shadow-lg hover:scale-105 transition-transform uppercase text-sm">
+                    <a href="https://zalo.me/0889717713" target="_blank" class="mt-4 bg-primary text-white py-2 px-6 rounded-lg font-bold shadow-lg hover:scale-105 transition-transform uppercase text-sm">
                         Liên hệ Zalo
                     </a>
                 `;
@@ -748,7 +767,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 minDate.setDate(minDate.getDate() + 1);
                 checkoutInput.min = minDate.toISOString().split('T')[0];
 
-                // Automatically set checkout value to +2 days
+                // Automatically set checkout value to +2 days by default
                 const defaultCheckout = new Date(ciDate);
                 defaultCheckout.setDate(defaultCheckout.getDate() + 2);
                 checkoutInput.value = defaultCheckout.toISOString().split('T')[0];
@@ -870,48 +889,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // 1. Policy Check (1-night rule)
-            if (diffDays === 1) {
-                // Instant feedback: start shaking immediately
-                triggerModalWarningEffect();
-
-                if (isCheckingPolicy) return;
-                isCheckingPolicy = true;
-                try {
-                    const monthId = ciDate.getMonth() + 1;
-                    const today = new Date(); today.setHours(0, 0, 0, 0);
-                    const daysLead = Math.ceil((ciDate - today) / (1000 * 60 * 60 * 24));
-
-                    const STATIC_POLICY = { 1: 5, 2: 5, 3: 4, 4: 7, 5: 7, 6: 5, 7: 5, 8: 5, 9: 7, 10: 7, 11: 7, 12: 5 };
-                    let minDaysLead = (dynamicPolicyData && dynamicPolicyData.find(p => p.Month_ID === monthId))?.Min_Days_Lead || STATIC_POLICY[monthId] || 7;
-
-                    const isWithinPeriod = daysLead <= minDaysLead;
-
-                    if (!isWithinPeriod) {
-                        // If OUTSIDE period, check if it fills a gap
-                        let isGapPossible = false;
-                        const prevStr = getStr(new Date(ciDate.getTime() - 86400000));
-                        const nextStr = getStr(new Date(coDate.getTime()));
-                        for (const rId in scheduleData) {
-                            if (scheduleData[rId][prevStr] === 'Booked' && scheduleData[rId][nextStr] === 'Booked') {
-                                if (scheduleData[rId][ci] !== 'Booked') { isGapPossible = true; break; }
-                            }
-                        }
-                        if (!isGapPossible) {
-                            triggerModalWarningEffect("Chồn ưu tiên nhận đặt phòng từ 2 đêm. Với đặt phòng 1 đêm, vui lòng liên hệ Zalo.");
-                            isCheckingPolicy = false;
-                            return;
-                        }
-                    }
-                    // If isWithinPeriod, we allow it immediately (regardless of gap)
-                } catch (e) {
-                    console.error(e);
-                    triggerModalWarningEffect("Có lỗi khi kiểm tra chính sách. Vui lòng thử lại.");
-                    isCheckingPolicy = false;
-                    return;
-                }
-                finally { isCheckingPolicy = false; }
-            }
+            // 1. Policy Check (Relaxed for 1-night support)
+            // Removed strict filtering to allow guests to select and view 1-night stays
+            // as requested by the user.
 
             // 3. Child Age Validation (Sync with index.html)
             const modalAgeSelectors = modalAgeContainer.querySelectorAll('select');
@@ -1103,25 +1083,25 @@ function animateFly(startEl, targetEl, imgSrc, callback) {
     void clone.offsetWidth;
 
     flyContainer.appendChild(clone);
-
-    // Bắt đầu bay
-    requestAnimationFrame(() => {
-        // Ensure rects are fresh
-        const freshTargetRect = targetEl.getBoundingClientRect();
-        clone.style.top = `${freshTargetRect.top}px`;
-        clone.style.left = `${freshTargetRect.left}px`;
-        clone.style.width = `${freshTargetRect.width}px`;
-        clone.style.height = `${freshTargetRect.height}px`;
-        clone.style.opacity = '0.7';
-        clone.style.borderRadius = '8px';
-        clone.style.transform = 'scale(0.3)'; // Added shrink effect
-    });
+    // Bắt đầu bay - Thêm một chút delay nhỏ để đảm bảo Footer đã bắt đầu hiện
+    setTimeout(() => {
+        requestAnimationFrame(() => {
+            const freshTargetRect = targetEl.getBoundingClientRect();
+            clone.style.top = `${freshTargetRect.top}px`;
+            clone.style.left = `${freshTargetRect.left}px`;
+            clone.style.width = `${freshTargetRect.width}px`;
+            clone.style.height = `${freshTargetRect.height}px`;
+            clone.style.opacity = '0.7';
+            clone.style.borderRadius = '8px';
+            clone.style.transform = 'scale(0.3)';
+        });
+    }, 50);
 
     // Xóa clone sau khi bay xong
     setTimeout(() => {
         clone.remove();
         if (callback) callback();
-    }, 700);
+    }, 750);
 }
 
 // Override hàm selectRoom để hỗ trợ waitlist
@@ -1403,14 +1383,17 @@ function openGallery(roomId) {
                 @media (max-width: 480px) { .grid-thumbnails { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }
                 .grid-thumb { aspect-ratio: 16/10; }
                 
-                .detail-container { position: fixed; inset: 0; background: black; z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 0; }
+                .detail-container { position: fixed; inset: 0; background: black; z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: flex-start; padding: 0; overflow: hidden; }
                 .detail-container.active { display: flex; }
-                .gallery-media { max-width: 100vw; max-height: 100vh; width: auto; height: auto; min-height: 400px; object-fit: contain; }
-                .nav-btn, .detail-close-btn-bottom { background: rgba(0, 0, 0, 0.4); color: white; border: 1px solid rgba(255,255,255,0.2); width: 50px; height: 50px; border-radius: 50%; cursor: pointer; backdrop-filter: blur(8px); transition: 0.3s; display: flex; align-items: center; justify-content: center; z-index: 220; }
+                .gallery-media { max-width: 100vw; max-height: calc(100vh - 180px); width: auto; height: auto; object-fit: contain; }
+                .nav-btn, .detail-close-btn-bottom { background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid rgba(255,255,255,0.2); width: 56px; height: 56px; border-radius: 50%; cursor: pointer; backdrop-filter: blur(8px); transition: 0.3s; display: flex; align-items: center; justify-content: center; z-index: 220; }
                 .nav-btn:hover, .detail-close-btn-bottom:hover { background: rgba(255,255,255,0.3); transform: scale(1.1); border-color: white; }
-                .detail-close-btn-bottom:hover { background: rgba(239, 68, 68, 0.4); } /* Reddish tint on hover for close */
+                .detail-close-btn-bottom:hover { background: rgba(239, 68, 68, 0.4); } 
                 
-                .gallery-header { position: sticky; top: 0; width: 100%; background: rgba(255, 250, 240, 0.95); backdrop-filter: blur(12px); z-index: 101; padding: 20px; display: flex; justify-content: space-between; align-items: center; border-b: 1px solid rgba(191, 149, 63, 0.2); box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+                .detail-footer-controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 0 30px; display: flex; flex-direction: column; align-items: center; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); z-index: 210; pointer-events: none; }
+                .detail-footer-controls > * { pointer-events: auto; }
+                
+                .gallery-header { position: sticky; top: 0; width: 100%; background: rgba(255, 250, 240, 0.95); backdrop-filter: blur(12px); z-index: 101; padding: 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(191, 149, 63, 0.2); box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
                 .gallery-close-btn { color: #1a1a1a; cursor: pointer; border: 1px solid #c8a96a; padding: 8px; border-radius: 50%; transition: all 0.3s; display: flex; align-items: center; justify-content: center; }
                 .gallery-close-btn:hover { background: #c8a96a; color: white; }
                 
@@ -1424,30 +1407,31 @@ function openGallery(roomId) {
                     <span class="material-symbols-outlined">close</span>
                 </div>
             </div>
-
+ 
             <div id="grid-view" class="grid-container animate-[fadeIn_0.5s_ease-out]">
                 <!-- Grid items injected here -->
             </div>
-
+ 
             <div id="detail-view" class="detail-container">
-                <div id="detail-media-container" class="w-full h-full flex items-center justify-center p-0"></div>
+                <div id="detail-media-container" class="w-full h-full flex items-start justify-center p-0 pt-2"></div>
                 
-                <!-- Navigation & Close Buttons Area -->
-                <div class="flex gap-8 mt-4 mb-2 z-[210]">
-                    <button class="nav-btn" onclick="prevGallery()">
-                        <span class="material-symbols-outlined">chevron_left</span>
-                    </button>
-                    <button class="nav-btn" onclick="nextGallery()">
-                        <span class="material-symbols-outlined">chevron_right</span>
-                    </button>
-                    <!-- Close button repositioned to the right of the arrows -->
-                    <button class="detail-close-btn-bottom" onclick="closeGallery()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
+                <div class="detail-footer-controls">
+                    <!-- Navigation & Close Buttons Area -->
+                    <div class="flex gap-8 mb-4 z-[210]">
+                        <button class="nav-btn" onclick="prevGallery()">
+                            <span class="material-symbols-outlined">chevron_left</span>
+                        </button>
+                        <button class="nav-btn" onclick="nextGallery()">
+                            <span class="material-symbols-outlined">chevron_right</span>
+                        </button>
+                        <button class="detail-close-btn-bottom" onclick="closeGallery()">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
 
-                <!-- Mini Thumb Bar -->
-                <div id="detail-thumbs" class="mt-4 flex gap-2 overflow-x-auto max-w-full px-4 scrollbar-hide h-16"></div>
+                    <!-- Mini Thumb Bar -->
+                    <div id="detail-thumbs" class="flex gap-2 overflow-x-auto max-w-full px-4 scrollbar-hide h-16"></div>
+                </div>
             </div>
         `;
         document.body.appendChild(modal);
@@ -1477,7 +1461,8 @@ function renderGalleryGrid() {
     gridView.innerHTML = `
         <div class="grid-layout">
             <div class="grid-item grid-feature" onclick="openDetail(0)">
-                <img src="${finalFeatureThumb}" loading="lazy" class="w-full h-full object-cover" />
+                <img src="${finalFeatureThumb}" loading="lazy" class="w-full h-full object-cover" 
+                     onerror="this.style.opacity='0'"/>
                 ${feature.type === 'video' ? `
                     <div class="video-play-icon">
                         <span class="material-symbols-outlined text-white text-6xl">play_circle</span>
@@ -1488,7 +1473,8 @@ function renderGalleryGrid() {
         const finalThumb = convertGDriveUrl(m.url, false, false, "w1024");
         return `
                 <div class="grid-item grid-secondary" onclick="openDetail(${i + 1})">
-                    <img src="${finalThumb}" loading="lazy" class="w-full h-full object-cover" />
+                    <img src="${finalThumb}" loading="lazy" class="w-full h-full object-cover" 
+                         onerror="this.style.opacity='0'"/>
                     ${m.type === 'video' ? `
                         <div class="video-play-icon">
                             <span class="material-symbols-outlined text-white text-4xl">play_circle</span>
@@ -1502,7 +1488,8 @@ function renderGalleryGrid() {
         const finalThumb = convertGDriveUrl(m.url, false, false, "w800");
         return `
                 <div class="grid-item grid-thumb" onclick="openDetail(${i + 3})">
-                    <img src="${finalThumb}" loading="lazy" class="w-full h-full object-cover" />
+                    <img src="${finalThumb}" loading="lazy" class="w-full h-full object-cover" 
+                         onerror="this.style.opacity='0'"/>
                     ${m.type === 'video' ? `
                         <div class="video-play-icon">
                             <span class="material-symbols-outlined text-white text-3xl">play_circle</span>
@@ -1537,14 +1524,18 @@ function updateDetailDisplay() {
     if (!container || !item) return;
 
     if (item.type === 'video') {
-        const isDirectVideo = item.url.includes('cloudinary.com') || 
-                             item.url.match(/\.(mp4|webm|mov|m4v|ogv)/i);
+        const isDirectVideo = item.url.includes('cloudinary.com') ||
+            item.url.match(/\.(mp4|webm|mov|m4v|ogv)/i);
 
         if (isDirectVideo) {
+            const posterUrl = item.url.includes('cloudinary.com') ? convertGDriveUrl(item.url, false, false, "q_auto,f_auto,so_2") : "";
             container.innerHTML = `
                 <video 
                     controls 
-                    class="gallery-media" 
+                    autoplay
+                    muted
+                    ${posterUrl ? `poster="${posterUrl}"` : ''}
+                    class="gallery-media animate-[fadeIn_0.5s_ease-out]" 
                     style="width: 100%; height: 85vh; background: #000; border-radius: 8px;"
                     playsinline>
                     <source src="${item.url}" type="video/mp4">
@@ -1552,8 +1543,9 @@ function updateDetailDisplay() {
                 </video>`;
         } else {
             // Iframe for YouTube/GDrive
+            const finalUrl = convertGDriveUrl(item.url, true);
             container.innerHTML = `<iframe 
-                src="${item.url}" 
+                src="${finalUrl}" 
                 class="gallery-media" 
                 style="width: 100%; height: 85vh; border: none;" 
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
@@ -1580,10 +1572,13 @@ function updateDetailDisplay() {
         thumbContainer.innerHTML = currentGallery.map((m, idx) => {
             // Use w300 for clearer thumbnails that are still fast
             const thumbUrl = convertGDriveUrl(m.url, false, false, "w300");
+            const isActive = idx === currentGalleryIndex;
             return `
             <div onclick="jumpToGallery(${idx})" 
-                 class="w-14 h-14 flex-shrink-0 cursor-pointer border-2 transition-all duration-300 rounded overflow-hidden relative ${idx === currentGalleryIndex ? 'border-[#BF953F] ring-2 ring-[#BF953F]/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}">
-                <img src="${thumbUrl}" class="w-full h-full object-cover bg-slate-800 pointer-events-none"/>
+                 ${isActive ? 'id="active-thumb"' : ''}
+                 class="w-14 h-14 flex-shrink-0 cursor-pointer border-2 transition-all duration-300 rounded overflow-hidden relative ${isActive ? 'border-[#BF953F] ring-2 ring-[#BF953F]/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}">
+                <img src="${thumbUrl}" class="w-full h-full object-cover bg-slate-800 pointer-events-none"
+                     onerror="this.style.opacity='0'"/>
                 ${m.type === 'video' ? `
                     <div class="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
                         <span class="material-symbols-outlined text-white text-xl">play_circle</span>
@@ -1592,6 +1587,14 @@ function updateDetailDisplay() {
             </div>
         `;
         }).join('');
+
+        // Ensure active thumb is in view
+        setTimeout(() => {
+            const activeThumb = document.getElementById('active-thumb');
+            if (activeThumb) {
+                activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+        }, 50);
     }
 }
 
@@ -1631,6 +1634,6 @@ window.openDetail = openDetail;
 
 // Gọi loadReview sau khi page load
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("Rooms script v11.7 loaded and active (Cloudinary Support).");
+    console.log("Rooms script v11.16 loaded and active (Final Policy Fix).");
     setTimeout(loadReviews, 500);
 });

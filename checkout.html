@@ -97,8 +97,33 @@
                     <path d="M10,90 Q10,10 90,10 L90,20 Q20,20 20,90 Z"></path>
                 </svg>
             </div>
-            <!-- Booking Summary Card -->
+            <!-- Policies (Now at top) -->
             <div class="mb-8">
+                <h2 class="font-serif text-lg font-bold mb-3 text-primary">Chính sách &amp; Nội quy</h2>
+                
+                <!-- Rules Image -->
+                <div class="mb-6 rounded-lg overflow-hidden border-2 border-primary/20 shadow-lg">
+                    <img src="img/noi_quy_luu_tru.png" 
+                         alt="Nội quy lưu trú" 
+                         class="w-full h-auto" />
+                </div>
+
+                <label class="flex gap-x-3 items-start cursor-pointer group">
+                    <div class="relative flex items-center pt-1">
+                        <input id="agree-checkbox"
+                            class="peer h-5 w-5 rounded border-primary border-2 bg-transparent text-primary focus:ring-primary focus:ring-offset-0 focus:outline-none appearance-none checked:bg-primary transition-colors"
+                            type="checkbox" />
+                        <span
+                            class="material-symbols-outlined absolute text-white opacity-0 peer-checked:opacity-100 text-sm left-0.5 transition-opacity">check</span>
+                    </div>
+                    <p class="text-sm leading-relaxed text-graphite/70 dark:text-slate-300">
+                        Tôi đồng ý với nội quy lưu trú tại home và quy định hoàn hủy phòng.
+                    </p>
+                </label>
+            </div>
+
+            <!-- Booking Summary Card (Initially Hidden) -->
+            <div id="summary-section" class="mb-8 hidden opacity-0 transition-all duration-500">
                 <h2 class="font-serif text-lg font-bold mb-4 text-primary">Thông tin đặt phòng</h2>
                 <div class="border border-primary/30 p-4 rounded-lg bg-background-light/80">
                     <div id="checkout-room-img" class="w-full h-40 bg-center bg-cover rounded-lg mb-4"
@@ -113,8 +138,16 @@
                             <span id="checkout-dates" class="font-medium text-graphite dark:text-white">...</span>
                         </div>
                         <div class="flex justify-between border-b border-primary/10 py-1">
+                            <span>Tiền phòng:</span>
+                            <span id="checkout-room-base" class="font-medium text-graphite dark:text-white">...</span>
+                        </div>
+                        <div id="checkout-surcharge-row" class="flex justify-between border-b border-primary/10 py-1 hidden">
+                            <span>Phụ Thu Khách Thứ 3:</span>
+                            <span id="checkout-surcharge" class="font-medium text-graphite dark:text-white">...</span>
+                        </div>
+                        <div class="flex justify-between border-b border-primary/10 py-1">
                             <span>Tổng cộng:</span>
-                            <span id="checkout-total" class="font-medium text-graphite dark:text-white">...</span>
+                            <span id="checkout-total" class="font-medium text-graphite dark:text-white font-bold">...</span>
                         </div>
                         <div class="flex justify-between py-1 text-primary">
                             <span class="font-bold">Tiền cọc (50%):</span>
@@ -123,23 +156,6 @@
                     </div>
                 </div>
             </div>
-            <!-- Policies -->
-            <div class="mb-8">
-                <h2 class="font-serif text-lg font-bold mb-3 text-primary">Chính sách &amp; Nội quy</h2>
-                <label class="flex gap-x-3 items-start cursor-pointer group">
-                    <div class="relative flex items-center pt-1">
-                        <input id="agree-checkbox"
-                            class="peer h-5 w-5 rounded border-primary border-2 bg-transparent text-primary focus:ring-primary focus:ring-offset-0 focus:outline-none appearance-none checked:bg-primary transition-colors"
-                            type="checkbox" />
-                        <span
-                            class="material-symbols-outlined absolute text-white opacity-0 peer-checked:opacity-100 text-sm left-0.5 transition-opacity">check</span>
-                    </div>
-                    <p class="text-sm leading-relaxed text-graphite/70 dark:text-slate-300">
-                        Tôi đồng ý với các <span class="text-primary underline font-medium">điều khoản</span> và nội quy
-                        lưu trú cao cấp tại Chồn Village. (Không hoàn cọc).
-                    </p>
-                </label>
-            </div>
 
             <!-- Payment Details Section (Hidden initially) -->
             <div id="payment-section" class="mb-8 hidden transition-opacity duration-500 opacity-0 relative">
@@ -147,10 +163,10 @@
                 <div class="flex flex-col items-center gap-4">
                     <div class="bg-white p-4 rounded-xl shadow-lg border-2 border-primary/20">
                         <div
-                            class="w-48 h-48 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center relative overflow-hidden rounded-lg">
-                            <span class="material-symbols-outlined text-6xl text-primary/40">qr_code_2</span>
-                            <div
-                                class="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_20px,rgba(200,169,106,0.05)_20px,rgba(200,169,106,0.05)_40px)]">
+                            class="w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden rounded-lg">
+                            <img id="checkout-qr" src="" alt="QR Thanh toán" class="w-full h-full object-contain" />
+                            <div id="qr-loading" class="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                <span class="material-symbols-outlined animate-spin text-primary">sync</span>
                             </div>
                         </div>
                     </div>
@@ -162,12 +178,16 @@
                         <div class="flex flex-col text-center">
                             <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Số tài
                                 khoản</span>
-                            <span class="text-lg font-serif tracking-widest font-bold">0123 4567 8910</span>
+                            <span class="text-lg font-serif tracking-widest font-bold">0889 717 713</span>
                         </div>
                         <div class="flex flex-col text-center">
                             <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Chủ tài
                                 khoản</span>
-                            <span class="text-base font-medium">CHON VILLAGE RESORT CO.</span>
+                            <span class="text-base font-medium uppercase">NGUYEN VAN CHON</span>
+                        </div>
+                        <div class="flex flex-col text-center border-t border-primary/10 pt-2 mt-2">
+                            <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Nội dung chuyển khoản</span>
+                            <span id="checkout-transfer-content" class="text-sm font-bold text-primary">...</span>
                         </div>
                     </div>
                 </div>
@@ -186,11 +206,11 @@
     <!-- Bottom Navigation Bar -->
     <nav class="border-t border-primary/10 bg-background-light dark:bg-background-dark px-4 pb-6 pt-2">
         <div class="flex gap-2">
-            <a class="flex flex-1 flex-col items-center justify-end gap-1 text-primary/60" href="#">
+            <a class="flex flex-1 flex-col items-center justify-end gap-1 text-primary/60" href="index.html">
                 <span class="material-symbols-outlined">home</span>
                 <p class="text-[10px] font-medium leading-normal tracking-wide">Trang chủ</p>
             </a>
-            <a class="flex flex-1 flex-col items-center justify-end gap-1 text-primary" href="#">
+            <a class="flex flex-1 flex-col items-center justify-end gap-1 text-primary" href="rooms.html">
                 <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1">calendar_month</span>
                 <p class="text-[10px] font-medium leading-normal tracking-wide">Đặt phòng</p>
             </a>
@@ -209,7 +229,7 @@
         class="fixed bottom-24 left-1/2 -translate-x-1/2 text-primary bg-background-light px-6 py-3 rounded-full text-[11px] font-bold opacity-0 pointer-events-none transition-opacity duration-300 shadow-xl border border-primary/50 text-center w-5/6">
     </div>
 
-    <script src="js/checkout.js"></script>
+    <script src="checkout.js"></script>
 
     <!-- Floating Contact Action Button -->
     <div id="floating-contact-container" class="fixed bottom-24 right-2 z-50 flex items-center justify-end">
@@ -217,13 +237,13 @@
         <div id="contact-icons-slide"
             class="flex items-center gap-3 mr-4 opacity-0 translate-x-10 pointer-events-none transition-all duration-300 ease-out">
             <!-- Phone Button -->
-            <a href="tel:0369877478"
+            <a href="tel:0889717713"
                 class="group relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-transform hover:scale-110">
                 <span class="material-symbols-outlined text-primary text-2xl">call</span>
             </a>
 
             <!-- Fanpage Button -->
-            <a href="https://facebook.com/chon.village" target="_blank"
+            <a href="https://www.facebook.com/profile.php?id=61575491687268" target="_blank"
                 class="group relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-transform hover:scale-110">
                 <svg class="h-6 w-6 fill-[#1877F2]" viewBox="0 0 24 24">
                     <path
@@ -232,7 +252,7 @@
             </a>
 
             <!-- Zalo Button -->
-            <a href="https://zalo.me/0369877478" target="_blank"
+            <a href="https://zalo.me/0889717713" target="_blank"
                 class="group relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl border-2 border-primary transition-transform hover:scale-110">
                 <img class="h-7 w-7 object-contain"
                     src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Icon_of_Zalo.svg/1200px-Icon_of_Zalo.svg.png"
