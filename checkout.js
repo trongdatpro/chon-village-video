@@ -42,14 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
     roomsData.forEach(room => {
         baseRoomTotal += parseInt(room.baseRoomTotal) || 0;
         
-        // Define rate for this specific room
-        let rate = 0;
-        const rid = String(room.id || "");
-        if (rid.includes('Pink') || rid.includes('Gray') || rid.includes('Green')) rate = 450000;
-        else if (rid.includes('Black')) rate = 550000;
-        else if (rid.includes('White')) rate = 600000;
-        else if (rid.includes('Gold')) rate = 650000;
-        
+        // Use dynamic surcharge from room data, fallback to default if missing
+        const rate = parseInt(room.surcharge) || 450000;
         surchargeRates.push(rate);
     });
 

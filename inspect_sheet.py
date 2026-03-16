@@ -2,7 +2,7 @@ import requests
 import re
 import json
 
-url = "https://docs.google.com/spreadsheets/d/1XluSzDsFCMCbgQHDjJTF7_mX7D4isUI9QbtwVCQXCbY/gviz/tq?gid=1606229783"
+url = "https://docs.google.com/spreadsheets/d/1A-DGSU4oPx74xdzloBQW4ekyhcjATwgh6dKf0Ky0XKg/gviz/tq?gid=214041162"
 response = requests.get(url)
 content = response.text
 
