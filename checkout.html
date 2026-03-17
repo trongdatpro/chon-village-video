@@ -122,72 +122,64 @@
                 </label>
             </div>
 
-            <!-- Booking Summary Card (Initially Hidden) -->
-            <div id="summary-section" class="mb-8 hidden opacity-0 transition-all duration-500">
+            <!-- Consolidated Summary & Payment Frame -->
+            <div id="summary-section" class="hidden opacity-0 transition-all duration-500">
                 <h2 class="font-serif text-lg font-bold mb-4 text-primary">Thông tin đặt phòng</h2>
-                <div class="border border-primary/30 p-4 rounded-lg bg-background-light/80">
-                    <div id="checkout-room-img" class="w-full h-40 bg-center bg-cover rounded-lg mb-4"
-                        style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCTWVEFGAnYmus14VGJ6vYTvzRMdf9ZMaKrZoWktLgKXB5L46kLNHm6eiW4WRNWR-nWHFPENA_23OKzmYo7kv0RNEcB-PaCUL4M-1mkvmvovn0Dwn2dIp9bZ1ybr3fF2WHEW6lqupqXN-gyYkh0RH1_hurfJHCPyPWyHHCSpjdpUD6dI3bl_LXLCxeah8UX1CcGQm9LeJHLP9U0UxpCyNOthOjmbfK-rvrg63PxeQHVb73dtYG_iSvwlmBos5tO-G28zPzpZ9dBVe6_');">
-                    </div>
-                    <p class="text-xs uppercase tracking-widest text-primary font-bold mb-1">Chồn Village Luxury Resort
-                    </p>
-                    <h3 id="checkout-room-name" class="text-xl font-serif font-bold mb-2">Đang tải...</h3>
-                    <div class="space-y-1 text-sm text-graphite/80 dark:text-slate-300">
-                        <div class="flex justify-between border-b border-primary/10 pb-1">
-                            <span>Thời gian:</span>
-                            <span id="checkout-dates" class="font-medium text-graphite dark:text-white">...</span>
-                        </div>
-                        <div class="flex justify-between border-b border-primary/10 py-1">
-                            <span>Tiền phòng:</span>
-                            <span id="checkout-room-base" class="font-medium text-graphite dark:text-white">...</span>
-                        </div>
-                        <div id="checkout-surcharge-row" class="flex justify-between border-b border-primary/10 py-1 hidden">
-                            <span>Phụ Thu Khách Thứ 3:</span>
-                            <span id="checkout-surcharge" class="font-medium text-graphite dark:text-white">...</span>
-                        </div>
-                        <div class="flex justify-between border-b border-primary/10 py-1">
-                            <span>Tổng cộng:</span>
-                            <span id="checkout-total" class="font-medium text-graphite dark:text-white font-bold">...</span>
-                        </div>
-                        <div class="flex justify-between py-1 text-primary">
-                            <span class="font-bold">Tiền cọc (50%):</span>
-                            <span id="checkout-deposit" class="font-bold text-lg">...</span>
-                        </div>
-                    </div>
+                
+                <!-- Dynamic Room List Container -->
+                <div id="checkout-rooms-list" class="space-y-6 mb-8">
+                    <!-- Room cards will be injected here -->
                 </div>
-            </div>
 
-            <!-- Payment Details Section (Hidden initially) -->
-            <div id="payment-section" class="mb-8 hidden transition-opacity duration-500 opacity-0 relative">
-                <h2 class="font-serif text-lg font-bold mb-4 text-primary text-center">Thanh toán chuyển khoản</h2>
-                <div class="flex flex-col items-center gap-4">
-                    <div class="bg-white p-4 rounded-xl shadow-lg border-2 border-primary/20">
-                        <div
-                            class="w-48 h-48 bg-white flex items-center justify-center relative overflow-hidden rounded-lg">
-                            <img id="checkout-qr" src="" alt="QR Thanh toán" class="w-full h-full object-contain" />
-                            <div id="qr-loading" class="absolute inset-0 bg-white/80 flex items-center justify-center">
-                                <span class="material-symbols-outlined animate-spin text-primary">sync</span>
-                            </div>
+                <!-- Styled Single Frame for Totals and Payment -->
+                <div class="p-6 bg-primary/5 rounded-xl border-2 border-primary/30 shadow-md space-y-6">
+                    <!-- Grand Total Section -->
+                    <div class="space-y-4 border-b border-primary/20 pb-6">
+                        <div class="flex justify-center items-center">
+                            <span class="text-base font-serif font-bold text-primary text-center">Tất cả chi phí đã bao gồm phụ thu (nếu có)</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-base font-serif font-bold text-primary">Tổng cộng tất cả:</span>
+                            <span id="checkout-total" class="text-base font-serif font-bold text-primary">...</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
+                            <span class="text-base font-serif font-bold text-primary">Tiền đặt cọc (50%):</span>
+                            <span id="checkout-deposit" class="text-base font-serif font-bold text-primary">...</span>
                         </div>
                     </div>
-                    <div class="w-full space-y-3 bg-primary/5 p-4 rounded-lg border border-primary/20">
-                        <div class="flex flex-col text-center">
-                            <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Ngân hàng</span>
-                            <span class="text-base font-bold">Vietcombank</span>
-                        </div>
-                        <div class="flex flex-col text-center">
-                            <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Số tài
-                                khoản</span>
-                            <span class="text-lg font-serif tracking-widest font-bold">0889 717 713</span>
-                        </div>
-                        <div class="flex flex-col text-center">
-                            <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Chủ tài
-                                khoản</span>
-                            <span class="text-base font-medium uppercase">NGUYEN VAN CHON</span>
-                        </div>
-                        <div class="flex flex-col text-center border-t border-primary/10 pt-2 mt-2">
-                            <span class="text-[10px] uppercase tracking-tighter text-primary font-bold">Nội dung chuyển khoản</span>
-                            <span id="checkout-transfer-content" class="text-sm font-bold text-primary">...</span>
+
+                    <!-- Payment Details Section -->
+                    <div id="payment-section" class="hidden transition-opacity duration-500 opacity-0 space-y-6">
+                        <h2 class="font-serif text-base font-bold text-primary text-center uppercase tracking-widest">Thanh toán chuyển khoản</h2>
+                        
+                        <div class="flex flex-col items-center gap-6">
+                            <div class="bg-white p-4 rounded-xl shadow-lg border-2 border-primary/20 w-fit mx-auto">
+                                <div class="w-56 h-56 bg-white flex items-center justify-center relative overflow-hidden rounded-lg">
+                                    <img id="checkout-qr" src="" alt="QR Thanh toán" class="w-full h-full object-contain" />
+                                    <div id="qr-loading" class="absolute inset-0 bg-white/80 flex items-center justify-center">
+                                        <span class="material-symbols-outlined animate-spin text-primary">sync</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="w-full space-y-4">
+                                <div class="flex flex-col text-center">
+                                    <span class="text-base uppercase tracking-widest text-primary/70 font-bold">Ngân hàng</span>
+                                    <span class="text-base font-bold text-primary">Vietcombank</span>
+                                </div>
+                                <div class="flex flex-col text-center">
+                                    <span class="text-base uppercase tracking-widest text-primary/70 font-bold">Số tài khoản</span>
+                                    <span class="text-base font-serif tracking-widest font-bold text-primary">0889 717 713</span>
+                                </div>
+                                <div class="flex flex-col text-center">
+                                    <span class="text-base uppercase tracking-widest text-primary/70 font-bold">Chủ tài khoản</span>
+                                    <span class="text-base font-serif font-bold uppercase text-primary">NGUYEN VAN CHON</span>
+                                </div>
+                                <div class="flex flex-col text-center border-t border-primary/20 pt-4">
+                                    <span class="text-base uppercase tracking-widest text-primary/70 font-bold">Nội dung chuyển khoản</span>
+                                    <span id="checkout-transfer-content" class="text-base font-bold text-primary">...</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

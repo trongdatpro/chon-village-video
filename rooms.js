@@ -445,6 +445,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // 1. Check if room is available for ALL days and sum the price
             let bookedOnTargetNight = false;
+            const nightlyDetails = [];
+
             for (const date of datesToStay) {
                 const dateStr = getStr(date);
                 const status = scheduleData[room.id] ? scheduleData[room.id][dateStr] : null;
@@ -458,9 +460,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 // Track if any night in the stay is a holiday
                 const dayNote = (roomDayData.note || "").toLowerCase().normalize("NFC");
-                // Very robust matching: includes common Vietnamese forms and 'holiday'
-                // Regex checks for "lễ" in various accent forms
-                if (/l[ễễe]/.test(dayNote) || dayNote.includes("holiday")) {
+                const isDayHoliday = /l[ễễe]/.test(dayNote) || dayNote.includes("holiday");
+
+                if (isDayHoliday) {
                     isHolidayStay = true;
                     console.log(`[DEBUG] Holiday detected on ${dateStr} for ${room.id} via note: "${roomDayData.note}"`);
                 }
@@ -469,6 +471,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const isWe = (dow === 5 || dow === 6 || dow === 0);
                 const nightPrice = isWe ? (roomDayData.weekend || 1000000) : (roomDayData.weekday || 800000);
                 totalRoomBasePrice += nightPrice;
+
+                nightlyDetails.push({
+                    date: new Date(date),
+                    dateStr: dateStr,
+                    price: nightPrice,
+                    surcharge_val: roomDayData.surcharge || 450000,
+                    isHoliday: isDayHoliday,
+                    note: roomDayData.note || ""
+                });
+            }
+
+            // Group consecutive nights with identical price and holiday status
+            const groupedNights = [];
+            if (nightlyDetails.length > 0) {
+                let currentGroup = {
+                    startDate: nightlyDetails[0].date,
+                    endDate: nightlyDetails[0].date,
+                    price: nightlyDetails[0].price,
+                    isHoliday: nightlyDetails[0].isHoliday,
+                    count: 1
+                };
+
+                for (let i = 1; i < nightlyDetails.length; i++) {
+                    const night = nightlyDetails[i];
+                    if (night.price === currentGroup.price && night.isHoliday === currentGroup.isHoliday) {
+                        currentGroup.endDate = night.date;
+                        currentGroup.count++;
+                    } else {
+                        groupedNights.push(currentGroup);
+                        currentGroup = {
+                            startDate: night.date,
+                            endDate: night.date,
+                            price: night.price,
+                            isHoliday: night.isHoliday,
+                            count: 1
+                        };
+                    }
+                }
+                groupedNights.push(currentGroup);
             }
 
             if (bookedOnTargetNight) return; // HIDDEN if actually booked
@@ -477,6 +518,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const firstDate = datesToStay[0];
             const firstDateStr = getStr(firstDate);
             const roomDayData = (pricingData[room.id] && pricingData[room.id][firstDateStr]) || (pricingData[room.id] && pricingData[room.id]['default']) || {};
+            
+            // Reference prices for display logic
+            const baseWeekday = roomDayData.weekday || 800000;
+            const baseWeekend = roomDayData.weekend || 1000000;
 
             const isHoliday = isHolidayStay;
             if (isHoliday) console.log(`[DEBUG] Final decision for ${room.id}: HOLIDAY DISPLAY ACTIVE`);
@@ -559,48 +604,91 @@ document.addEventListener('DOMContentLoaded', async () => {
             `).join('');
 
             const isAlreadySelected = selectedRooms.some(r => String(r.id) === String(room.id));
-            const surchargeValue = roomDayData.surcharge || 450000;
-            const surchargeText = `Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: ${renderCurrency(surchargeValue)}đ/đêm`;
-
-            // Current Pricing Display (using first night as reference)
-            let priceHtml = "";
-            if (isHoliday) {
-                // Determine the actual price for the first night to show in the Holiday label
-                const firstDate = datesToStay[0];
-                const dow = firstDate.getDay();
-                const isWe = (dow === 5 || dow === 6 || dow === 0);
-                const displayPrice = isWe ? (roomDayData.weekend || 1000000) : (roomDayData.weekday || 800000);
-
-                priceHtml = `
-                    <div class="flex flex-col gap-0.5 -ml-3">
-                        <p class="text-[11px] text-slate-400 uppercase tracking-tight mb-1">Giá Niêm Yết</p>
-                        <div class="flex items-baseline gap-1 whitespace-nowrap">
-                            <span class="text-[12px] font-normal text-slate-500">Giá Lễ</span>
-                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(displayPrice)}</span>
-                            <span class="text-[12px] font-normal text-slate-500">/ 1 đêm.</span>
-                        </div>
-                        <p class="text-[12px] sm:text-[13px] text-black font-bold mt-1.5">${surchargeText}</p>
-                    </div>`;
+            
+            // Determine Surcharge for display and for selection
+            // If nights >= 3, use standard (weekday) surcharge
+            let selectedSurcharge = roomDayData.surcharge || 450000;
+            if (datesToStay.length >= 3) {
+                // Find a non-holiday surcharge in the stay details
+                const weekdayNight = nightlyDetails.find(n => !n.isHoliday);
+                if (weekdayNight) {
+                    selectedSurcharge = weekdayNight.surcharge_val || 450000; // I need to make sure surcharge is in nightlyDetails
+                }
             } else {
-                priceHtml = `
-                    <div class="flex flex-col gap-0.5 -ml-3">
-                        <p class="text-[11px] text-slate-400 uppercase tracking-tight mb-1">Giá Niêm Yết</p>
-                        <div class="flex items-baseline gap-1 whitespace-nowrap">
-                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(roomDayData.weekday || 800000)}</span>
-                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Trong Tuần</span>
-                        </div>
-                        <div class="flex items-baseline gap-1 whitespace-nowrap">
-                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(roomDayData.weekend || 1000000)}</span>
-                            <span class="text-[12px] font-normal text-slate-500">/ Đêm Cuối Tuần</span>
-                        </div>
-                        <p class="text-[12px] sm:text-[13px] text-black font-bold mt-1.5">${surchargeText}</p>
-                    </div>`;
+                selectedSurcharge = roomDayData.surcharge || 450000;
             }
+
+            const surchargeText = `Phòng tiêu chuẩn 2 khách - Phụ thu khách thứ 3: ${renderCurrency(selectedSurcharge)}đ/đêm`;
+
+            // Pricing Breakdown Display
+            let priceHtml = "";
+            const formatDateShort = (d) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+            
+            priceHtml = `
+                <div class="flex flex-col gap-0.5 -ml-3">
+                    <p class="text-[11px] text-slate-400 uppercase tracking-tight mb-1">Giá Niêm Yết</p>
+                    <div class="space-y-1">`;
+
+            if (baseWeekday !== baseWeekend) {
+                // DIFFERENT: Show BOTH stacked (Image 2)
+                priceHtml += `
+                    <div class="flex items-baseline gap-1 whitespace-nowrap">
+                        <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(baseWeekday)}</span>
+                        <span class="text-[12px] font-normal text-slate-500">/ Đêm Trong Tuần (Thứ 2 - Thứ 5)</span>
+                    </div>
+                    <div class="flex items-baseline gap-1 whitespace-nowrap">
+                        <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(baseWeekend)}</span>
+                        <span class="text-[12px] font-normal text-slate-500">/ Đêm Cuối Tuần (Thứ 6 - Chủ Nhật)</span>
+                    </div>`;
+                
+                // Show holiday nights if any in stay
+                groupedNights.forEach(group => {
+                    if (group.isHoliday) {
+                        const dateLabel = group.count > 1 
+                            ? `Giá Ngày ${formatDateShort(group.startDate)}-${formatDateShort(group.endDate)} :`
+                            : `Giá Ngày Lễ ${formatDateShort(group.startDate)} :`;
+                        priceHtml += `
+                            <div class="flex items-baseline gap-1 whitespace-nowrap">
+                                <span class="text-[12px] font-normal text-slate-500">${dateLabel}</span>
+                                <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(group.price)}</span>
+                                <span class="text-[12px] font-normal text-slate-500">/ 1 Đêm</span>
+                            </div>`;
+                    }
+                });
+            } else {
+                // SAME: Show dates for stay (Image 3)
+                priceHtml += groupedNights.map(group => {
+                    const dateLabel = group.count > 1 
+                        ? `Giá Ngày ${formatDateShort(group.startDate)}-${formatDateShort(group.endDate)} :`
+                        : `Giá ${group.isHoliday ? 'Ngày Lễ ' : 'Ngày '}${formatDateShort(group.startDate)} :`;
+                    return `
+                        <div class="flex items-baseline gap-1 whitespace-nowrap">
+                            <span class="text-[12px] font-normal text-slate-500">${dateLabel}</span>
+                            <span class="text-[15px] font-bold text-graphite leading-none">${renderCurrency(group.price)}</span>
+                            <span class="text-[12px] font-normal text-slate-500">/ 1 Đêm</span>
+                        </div>`;
+                }).join('');
+            }
+
+            priceHtml += `
+                    </div>
+                    <p class="text-[12px] sm:text-[13px] text-black font-bold mt-1.5">${surchargeText}</p>
+                </div>`;
 
             const buttonHtml = `
                     <div class="relative p-[3px] rounded-xl bg-gradient-to-b from-[#BF953F] via-[#FCF6BA] to-[#AA771C] shadow-lg shadow-black/20 group/btn active:scale-95 transition-transform duration-300">
                         <div class="p-[1px] rounded-[9px] bg-gradient-to-b from-[#AA771C] via-[#FCF6BA] to-[#BF953F]">
-                            <button data-room-id="${room.id}" onclick='selectRoom(this, ${JSON.stringify({ id: room.id, name: room.name, img: roomImg, baseRoomTotal: totalRoomBasePrice, nights: datesToStay.length })})' 
+                            <button data-room-id="${room.id}" onclick='selectRoom(this, ${JSON.stringify({ 
+                                id: room.id, 
+                                name: room.name, 
+                                img: roomImg, 
+                                baseRoomTotal: totalRoomBasePrice, 
+                                nights: datesToStay.length,
+                                surcharge: selectedSurcharge,
+                                baseWeekday: baseWeekday,
+                                baseWeekend: baseWeekend,
+                                groupedNights: groupedNights.map(g => ({...g, startDate: formatDateShort(g.startDate), endDate: formatDateShort(g.endDate)}))
+                            })})' 
                                 class="${isAlreadySelected ? 'bg-[#A0824B] text-white pointer-events-none' : 'bg-primary text-white'} hover:bg-[#A0824B] font-sans tracking-wider font-bold text-[15px] sm:text-[16px] py-2.5 px-8 rounded-[8px] transition-all duration-500 flex items-center justify-center leading-none uppercase w-full whitespace-nowrap">
                                 ${isAlreadySelected ? 'Đã Chọn' : 'Chọn Phòng'}
                             </button>
@@ -1215,9 +1303,16 @@ window.selectRoom = function (btn, roomData) {
 
     // 3. Thêm vào mảng local
     // Include surcharge and notes for checkout page calculation
+    // SPECIAL RULE: If stay >= 3 nights (4 days 3 nights), the surcharge is already handled or we use roomData.surcharge
+    let finalSurcharge = roomData.surcharge || 450000;
+    
+    if (roomData.nights >= 3) {
+        console.log(`[DEBUG] Stay >= 3 nights (${roomData.nights}). Surcharge used: ${finalSurcharge}`);
+    }
+
     selectedRooms.push({
         ...roomData,
-        surcharge: roomData.surcharge || 450000
+        surcharge: finalSurcharge
     });
 
     // 4. Render lại waitlist để tạo placeholder
